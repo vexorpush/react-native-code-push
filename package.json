@@ -1,0 +1,51 @@
+{
+  "name": "@vexor-push/react-native-code-push",
+  "version": "0.2.0",
+  "description": "Vexor React Native CodePush SDK for self-hosted OTA updates.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vexorpush/react-native-code-push.git"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "deployment-state.js",
+    "current-version.js",
+    "src/NativeVexorCodePush.ts",
+    "android",
+    "ios",
+    "cpp",
+    "*.podspec",
+    "react-native.config.js",
+    "app.plugin.js",
+    "plugin",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "build-plugin": "tsc --build plugin",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "test": "jest",
+    "typecheck": "tsc"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "license": "MIT"
+}

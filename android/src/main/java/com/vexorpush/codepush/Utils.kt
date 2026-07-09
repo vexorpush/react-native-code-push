@@ -1,0 +1,105 @@
+package com.vexorpush.codepush
+
+import android.content.Context
+import android.icu.text.SimpleDateFormat
+import com.vexorpush.codepush.Common.PREVIOUS_PATH
+import com.vexorpush.codepush.SharedPrefs
+import java.io.File
+import java.util.Date
+import java.util.Locale
+import java.util.zip.ZipFile
+
+class Utils internal constructor(private val context: Context) {
+
+  fun deleteDirectory(directory: File): Boolean {
+    if (directory.isDirectory) {
+      // List all files and directories in the current directory
+      val files = directory.listFiles()
+      if (files != null) {
+        // Recursively delete all files and directories
+        for (file in files) {
+          if (!deleteDirectory(file)) {
+            return false
+          }
+        }
+      }
+    }
+    // Finally, delete the empty directory or file
+    return directory.delete()
+  }
+  fun deleteOldBundleIfneeded(pathKey: String?): Boolean {
+    val pathName = pathKey ?: PREVIOUS_PATH
+    val sharedPrefs = SharedPrefs(context)
+    val bundlePath = sharedPrefs.getString(pathName)
+
+    if (!bundlePath.isNullOrEmpty()) {
+      val bundleFile = File(bundlePath)
+      if (bundleFile.exists() && bundleFile.isFile) {
+        val outputFolder = bundleFile.parentFile
+        if (outputFolder != null && outputFolder.exists() && outputFolder.isDirectory) {
+          val isDeleted = deleteDirectory(outputFolder)
+          sharedPrefs.putString(pathName, "")
+          return isDeleted
+        }
+      }
+    }
+    return false
+  }
+
+  fun extractZipFile(
+    zipFile: File,extension: String, version: Int? = null
+  ): String? {
+    return try {
+      val outputDir = zipFile.parentFile
+      val timestamp = SimpleDateFormat("yyyy_MM_dd_HH_mm", Locale.getDefault()).format(Date())
+      var topLevelFolder: String? = null
+      var bundlePath: String? = null
+      ZipFile(zipFile).use { zip ->
+        zip.entries().asSequence().forEach { entry ->
+          zip.getInputStream(entry).use { input ->
+            if (topLevelFolder == null) {
+              // Get root folder of zip file after unzip
+              val parts = entry.name.split("/")
+              if (parts.size > 1) {
+                topLevelFolder = parts.first()
+              }
+            }
+            val outputFile = File(outputDir, entry.name)
+            if (entry.isDirectory) {
+              if (!outputFile.exists()) outputFile.mkdirs()
+            } else {
+              if (outputFile.parentFile?.exists() != true)  outputFile.parentFile?.mkdirs()
+              outputFile.outputStream().use { output ->
+                input.copyTo(output)
+              }
+              if (outputFile.absolutePath.endsWith(extension)) {
+                bundlePath = outputFile.absolutePath
+                return@use // Exit early if found
+              }
+            }
+          }
+        }
+      }
+      // Rename the detected top-level folder
+      if (topLevelFolder != null) {
+        val extractedFolder = File(outputDir, topLevelFolder)
+        // Include version in folder name if provided, otherwise use timestamp only
+        val folderName = if (version != null) {
+          "output_v${version}_$timestamp"
+        } else {
+          "output_$timestamp"
+        }
+        val renamedFolder = File(outputDir, folderName)
+        if (extractedFolder.exists()) {
+          extractedFolder.renameTo(renamedFolder)
+          // Update bundlePath if the file was inside the renamed folder
+          bundlePath = bundlePath?.replace(extractedFolder.absolutePath, renamedFolder.absolutePath)
+        }
+      }
+      bundlePath
+    } catch (e: Exception) {
+      e.printStackTrace()
+      null
+    }
+  }
+}
