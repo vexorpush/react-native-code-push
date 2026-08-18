@@ -46,6 +46,22 @@ class Utils internal constructor(private val context: Context) {
     return false
   }
 
+  /**
+   * Resolves a zip entry against [outputDir] and refuses anything that escapes it.
+   * Without this check a crafted archive ("../../shared_prefs/x.xml") can overwrite
+   * arbitrary files inside the app sandbox (Zip Slip).
+   */
+  private fun resolveZipEntryTarget(outputDir: File?, entryName: String): File {
+    val baseDir = outputDir ?: throw SecurityException("Missing output directory for zip extraction")
+    val basePath = baseDir.canonicalPath
+    val target = File(baseDir, entryName)
+    val targetPath = target.canonicalPath
+    if (targetPath != basePath && !targetPath.startsWith(basePath + File.separator)) {
+      throw SecurityException("Blocked zip entry outside of the output directory: $entryName")
+    }
+    return target
+  }
+
   fun extractZipFile(
     zipFile: File,extension: String, version: Int? = null
   ): String? {
@@ -64,7 +80,7 @@ class Utils internal constructor(private val context: Context) {
                 topLevelFolder = parts.first()
               }
             }
-            val outputFile = File(outputDir, entry.name)
+            val outputFile = resolveZipEntryTarget(outputDir, entry.name)
             if (entry.isDirectory) {
               if (!outputFile.exists()) outputFile.mkdirs()
             } else {

@@ -69,7 +69,10 @@ async function checkUpdate(options = {}) {
   const config = normalizeConfig({ ...runtimeConfig, ...options });
   const currentVersion =
     typeof options.currentVersion === "number" ? options.currentVersion : await getCurrentVersion(config);
-  const manifestUrl = buildManifestUrl(config, currentVersion);
+  // Always identify the device: the server buckets staged rollouts on this id,
+  // and without it every device falls back to a per-request coin flip.
+  const clientId = await getClientUniqueId(config);
+  const manifestUrl = buildManifestUrl(config, currentVersion, clientId);
   debugLog(config, "checkUpdate:request", {
     currentVersion,
     manifestUrl,
@@ -321,7 +324,7 @@ async function checkPendingUpdate(options = {}) {
   return { status: "pending", pending: nextPending };
 }
 
-function buildManifestUrl(config, currentVersion) {
+function buildManifestUrl(config, currentVersion, clientId) {
   const baseUrl = String(config.baseUrl || defaultConfig.baseUrl).replace(/\/+$/, "");
   const path = config.deploymentKey
     ? `/api/ota/key/${encodeURIComponent(config.deploymentKey)}/update.json`
@@ -333,8 +336,9 @@ function buildManifestUrl(config, currentVersion) {
     ["platform", config.platform || Platform.OS],
     ["binaryVersion", config.binaryVersion || defaultConfig.binaryVersion],
   ];
-  if (config.clientId) {
-    params.push(["clientId", String(config.clientId)]);
+  const resolvedClientId = clientId || config.clientId;
+  if (resolvedClientId) {
+    params.push(["clientId", String(resolvedClientId)]);
   }
   return `${baseUrl}${path}?${toQueryString(params)}`;
 }

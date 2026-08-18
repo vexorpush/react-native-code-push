@@ -1,6 +1,6 @@
 {
   "name": "@vexor-push/react-native-code-push",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Vexor React Native CodePush SDK for self-hosted OTA updates.",
   "main": "index.js",
   "types": "index.d.ts",

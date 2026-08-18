@@ -97,5 +97,9 @@ export function checkPendingUpdate(options?: Partial<VexorOtaConfig> & {
 }>;
 export function reportDownload(payload: Record<string, unknown>, config?: Partial<VexorOtaConfig>): Promise<void>;
 export function reportDeploy(payload: Record<string, unknown>, config?: Partial<VexorOtaConfig>): Promise<void>;
-export function buildManifestUrl(config: VexorOtaConfig, currentVersion?: number): string;
+export function buildManifestUrl(
+  config: VexorOtaConfig,
+  currentVersion?: number,
+  clientId?: string,
+): string;
 export function getDownloadUrl(manifest: VexorOtaManifest, platform?: PlatformOSType): string;
