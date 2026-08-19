@@ -3,7 +3,7 @@ import { TurboModuleRegistry } from 'react-native';
 
 export interface Spec extends TurboModule {
   setupBundlePath(path: string, extension: string, version?: number, maxVersions?: number, metadata?: string): Promise<boolean>;
-  downloadAndInstallBundle(url: string, headersJson: string, extension: string, version?: number, maxVersions?: number, metadata?: string): Promise<boolean>;
+  downloadAndInstallBundle(url: string, headersJson: string, extension: string, version?: number, maxVersions?: number, metadata?: string, expectedPackageHash?: string): Promise<boolean>;
   setExactBundlePath(path: string): Promise<boolean>;
   deleteBundle(i: number): Promise<boolean>;
   restart(): void;

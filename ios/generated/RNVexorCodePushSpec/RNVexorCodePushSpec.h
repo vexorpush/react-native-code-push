@@ -46,6 +46,7 @@
                          version:(NSNumber *)version
                      maxVersions:(NSNumber *)maxVersions
                         metadata:(NSString *)metadata
+             expectedPackageHash:(NSString *)expectedPackageHash
                          resolve:(RCTPromiseResolveBlock)resolve
                           reject:(RCTPromiseRejectBlock)reject;
 - (void)setExactBundlePath:(NSString *)path

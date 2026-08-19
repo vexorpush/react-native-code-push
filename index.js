@@ -231,6 +231,10 @@ async function downloadAndInstallBundleNative({ downloadUrl, version, manifest, 
     );
   }
 
+  // The native side recomputes this over the downloaded archive and refuses to
+  // install a package that does not match, so a tampered bundle never runs.
+  const expectedPackageHash = manifest.metadata?.packageHash || manifest.packageHash || "";
+
   const success = await nativeModule.downloadAndInstallBundle(
     downloadUrl,
     JSON.stringify(config.headers || {}),
@@ -238,6 +242,7 @@ async function downloadAndInstallBundleNative({ downloadUrl, version, manifest, 
     version,
     positiveInteger(options.maxBundleVersions ?? config.maxBundleVersions, 2),
     JSON.stringify(manifest.metadata || {}),
+    expectedPackageHash,
   );
 
   if (!success) {

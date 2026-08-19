@@ -1,6 +1,97 @@
 #import "VexorCodePush.h"
 #import <SSZipArchive/SSZipArchive.h>
+#import <CommonCrypto/CommonDigest.h>
 #include <signal.h>
+
+
+static NSString *VexorSha256Hex(NSData *data) {
+  unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+  CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+  NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+  for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
+    [hex appendFormat:@"%02x", digest[i]];
+  }
+  return hex;
+}
+
+/** Files the server leaves out of the manifest entirely. */
+static BOOL VexorIsHashIgnored(NSString *relativePath) {
+  if (relativePath.length == 0) return YES;
+  return [relativePath hasPrefix:@"__MACOSX/"] ||
+         [relativePath isEqualToString:@".DS_Store"] ||
+         [relativePath hasSuffix:@".DS_Store"];
+}
+
+/** Additionally left out of the hash, though it stays in the manifest. */
+static BOOL VexorIsPackageHashIgnored(NSString *relativePath) {
+  return [relativePath isEqualToString:@".codepushrelease"] ||
+         [relativePath hasSuffix:@".codepushrelease"] ||
+         VexorIsHashIgnored(relativePath);
+}
+
+/**
+ * Mirrors JSON.stringify for an array of strings: no whitespace, same escape
+ * set. Hand-rolled rather than using NSJSONSerialization so the bytes match the
+ * server's digest input exactly.
+ */
+static NSString *VexorJsonStringArray(NSArray<NSString *> *values) {
+  NSMutableString *out = [NSMutableString stringWithString:@"["];
+  [values enumerateObjectsUsingBlock:^(NSString *value, NSUInteger index, BOOL *stop) {
+    if (index > 0) [out appendString:@","];
+    [out appendString:@"\""];
+    for (NSUInteger i = 0; i < value.length; i++) {
+      unichar c = [value characterAtIndex:i];
+      switch (c) {
+        case '"':  [out appendString:@"\\\""]; break;
+        case '\\': [out appendString:@"\\\\"]; break;
+        case 0x08: [out appendString:@"\\b"]; break;
+        case 0x0C: [out appendString:@"\\f"]; break;
+        case '\n': [out appendString:@"\\n"]; break;
+        case '\r': [out appendString:@"\\r"]; break;
+        case '\t': [out appendString:@"\\t"]; break;
+        default:
+          if (c < 0x20) {
+            [out appendFormat:@"\\u%04x", c];
+          } else {
+            [out appendFormat:@"%C", c];
+          }
+      }
+    }
+    [out appendString:@"\""];
+  }];
+  [out appendString:@"]"];
+  return out;
+}
+
+/**
+ * Recomputes the CodePush package hash over an extracted package, so a download
+ * can be checked against the hash the server published.
+ *
+ * Must run before the extracted folder is renamed: the server hashes paths
+ * relative to its own unzip directory, and renaming changes them.
+ */
+static NSString *VexorComputePackageHash(NSString *directoryPath) {
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  NSMutableArray<NSString *> *entries = [NSMutableArray array];
+
+  NSDirectoryEnumerator *walker = [fileManager enumeratorAtPath:directoryPath];
+  for (NSString *relativePath in walker) {
+    BOOL isDirectory = NO;
+    NSString *fullPath = [directoryPath stringByAppendingPathComponent:relativePath];
+    if (![fileManager fileExistsAtPath:fullPath isDirectory:&isDirectory] || isDirectory) {
+      continue;
+    }
+    if (VexorIsPackageHashIgnored(relativePath)) continue;
+
+    NSData *contents = [NSData dataWithContentsOfFile:fullPath];
+    if (contents == nil) return nil;
+    [entries addObject:[NSString stringWithFormat:@"%@:%@", relativePath, VexorSha256Hex(contents)]];
+  }
+
+  [entries sortUsingSelector:@selector(compare:)];
+  NSString *manifest = VexorJsonStringArray(entries);
+  return VexorSha256Hex([manifest dataUsingEncoding:NSUTF8StringEncoding]);
+}
 
 @interface VexorCodePush ()
 - (NSArray *)loadBundleHistory;
@@ -266,7 +357,7 @@ void VexorCodePushExceptionHandler(NSException *exception) {
     NSLog(@"Renamed extracted folder to: %@", newFolderPath);
     return newFolderPath;
 }
-- (NSString *)unzipFileAtPath:(NSString *)zipFilePath extension:(NSString *)extension version:(NSNumber *)version  {
+- (NSString *)unzipFileAtPath:(NSString *)zipFilePath extension:(NSString *)extension version:(NSNumber *)version expectedPackageHash:(NSString *)expectedPackageHash  {
     // Define the directory where the files will be extracted
     NSString *extractedFolderPath = [[zipFilePath stringByDeletingPathExtension] stringByAppendingPathExtension:@"unzip"];
 
@@ -290,6 +381,21 @@ void VexorCodePushExceptionHandler(NSException *exception) {
         return nil;
     }
   // Try renaming the extracted folder
+      // Before the rename: the server hashes paths relative to its unzip
+      // directory, and renaming the top-level folder changes them.
+      if (expectedPackageHash.length > 0) {
+        NSString *actual = VexorComputePackageHash(extractedFolderPath);
+        if (actual == nil || [actual caseInsensitiveCompare:expectedPackageHash] != NSOrderedSame) {
+          NSLog(@"[VexorCodePush] package failed integrity check: expected %@ got %@",
+                expectedPackageHash, actual ?: @"(unreadable)");
+          [[NSFileManager defaultManager] removeItemAtPath:extractedFolderPath error:nil];
+          return nil;
+        }
+        NSLog(@"[VexorCodePush] package hash verified");
+      } else {
+        NSLog(@"[VexorCodePush] server sent no packageHash, integrity of this bundle is unverified");
+      }
+
       NSString *renamedFolderPath = [self renameExtractedFolderInDirectory:extractedFolderPath version:version];
 
       // If renaming fails, use the original extracted folder path
@@ -314,6 +420,7 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
                   version:(NSNumber * _Nonnull)version
                   maxVersions:(NSNumber * _Nonnull)maxVersions
                   metadata:(NSString *)metadata
+                  expectedPackageHash:(NSString *)expectedPackageHash
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject) {
   if (url == nil || url.length == 0) {
@@ -396,9 +503,9 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
         return;
       }
 
-      NSString *extractedFilePath = [self unzipFileAtPath:zipPath extension:(extension != nil) ? extension : @".jsbundle" version:version];
+      NSString *extractedFilePath = [self unzipFileAtPath:zipPath extension:(extension != nil) ? extension : @".jsbundle" version:version expectedPackageHash:expectedPackageHash];
       if (extractedFilePath == nil) {
-        reject(@"E_UNZIP_FAIL", @"Unzipping failed, zip file invalid", nil);
+        reject(@"E_UNZIP_FAIL", @"Update package failed verification or the archive is invalid", nil);
         return;
       }
 
@@ -424,7 +531,7 @@ RCT_EXPORT_METHOD(setupBundlePath:(NSString *)path extension:(NSString *)extensi
                   reject:(RCTPromiseRejectBlock)reject) {
     if ([VexorCodePush isFilePathValid:path]) {
         //Unzip file
-        NSString *extractedFilePath = [self unzipFileAtPath:path extension:(extension != nil) ? extension : @".jsbundle" version:version];
+        NSString *extractedFilePath = [self unzipFileAtPath:path extension:(extension != nil) ? extension : @".jsbundle" version:version expectedPackageHash:nil];
         if (extractedFilePath) {
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 

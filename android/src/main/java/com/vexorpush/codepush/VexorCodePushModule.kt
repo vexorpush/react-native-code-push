@@ -279,6 +279,7 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
     version: Double?,
     maxVersions: Double?,
     metadata: String?,
+    expectedPackageHash: String?,
     promise: Promise
   ) {
     if (url.isNullOrBlank()) {
@@ -289,6 +290,7 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
     scope.launch {
       try {
         val bundleFile = downloadBundleToCache(url, headersJson)
+        verifyPackageHash(bundleFile, expectedPackageHash)
         val result = processBundleFile(
           bundleFile.absolutePath,
           extension,
@@ -306,6 +308,35 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
         }
       }
     }
+  }
+
+  /**
+   * Rejects a package whose contents do not match the hash the server published.
+   * Runs before extraction, so a tampered archive never reaches the filesystem.
+   *
+   * A server that sends no hash is older than this check; the download proceeds
+   * so upgrading the SDK does not stop updates, and the gap is logged.
+   */
+  private fun verifyPackageHash(bundleFile: File, expectedPackageHash: String?) {
+    if (expectedPackageHash.isNullOrBlank()) {
+      Log.w(DEBUG_TAG, "server sent no packageHash, integrity of this bundle is unverified")
+      return
+    }
+
+    val actual = try {
+      PackageHash.computeFromZip(bundleFile)
+    } catch (e: Exception) {
+      bundleFile.delete()
+      throw Exception("Unable to verify update package: ${e.message}", e)
+    }
+
+    if (!actual.equals(expectedPackageHash, ignoreCase = true)) {
+      bundleFile.delete()
+      throw Exception(
+        "Update package failed integrity check: expected $expectedPackageHash but computed $actual"
+      )
+    }
+    Log.d(DEBUG_TAG, "package hash verified")
   }
 
   private fun downloadBundleToCache(url: String, headersJson: String?): File {

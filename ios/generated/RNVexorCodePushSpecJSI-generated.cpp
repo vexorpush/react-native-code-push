@@ -29,7 +29,8 @@ static jsi::Value __hostFunction_NativeVexorCodePushCxxSpecJSI_downloadAndInstal
     count <= 2 ? throw jsi::JSError(rt, "Expected argument in position 2 to be passed") : args[2].asString(rt),
     count <= 3 || args[3].isUndefined() ? std::nullopt : std::make_optional(args[3].asNumber()),
     count <= 4 || args[4].isUndefined() ? std::nullopt : std::make_optional(args[4].asNumber()),
-    count <= 5 || args[5].isUndefined() ? std::nullopt : std::make_optional(args[5].asString(rt))
+    count <= 5 || args[5].isUndefined() ? std::nullopt : std::make_optional(args[5].asString(rt)),
+    count <= 6 || args[6].isUndefined() ? std::nullopt : std::make_optional(args[6].asString(rt))
   );
 }
 static jsi::Value __hostFunction_NativeVexorCodePushCxxSpecJSI_setExactBundlePath(jsi::Runtime &rt, TurboModule &turboModule, const jsi::Value* args, size_t count) {
@@ -110,7 +111,7 @@ static jsi::Value __hostFunction_NativeVexorCodePushCxxSpecJSI_writeFile(jsi::Ru
 NativeVexorCodePushCxxSpecJSI::NativeVexorCodePushCxxSpecJSI(std::shared_ptr<CallInvoker> jsInvoker)
   : TurboModule("VexorCodePush", jsInvoker) {
   methodMap_["setupBundlePath"] = MethodMetadata {5, __hostFunction_NativeVexorCodePushCxxSpecJSI_setupBundlePath};
-  methodMap_["downloadAndInstallBundle"] = MethodMetadata {6, __hostFunction_NativeVexorCodePushCxxSpecJSI_downloadAndInstallBundle};
+  methodMap_["downloadAndInstallBundle"] = MethodMetadata {7, __hostFunction_NativeVexorCodePushCxxSpecJSI_downloadAndInstallBundle};
   methodMap_["setExactBundlePath"] = MethodMetadata {1, __hostFunction_NativeVexorCodePushCxxSpecJSI_setExactBundlePath};
   methodMap_["deleteBundle"] = MethodMetadata {1, __hostFunction_NativeVexorCodePushCxxSpecJSI_deleteBundle};
   methodMap_["restart"] = MethodMetadata {0, __hostFunction_NativeVexorCodePushCxxSpecJSI_restart};

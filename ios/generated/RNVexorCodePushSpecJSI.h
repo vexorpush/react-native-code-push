@@ -21,7 +21,7 @@ protected:
 
 public:
   virtual jsi::Value setupBundlePath(jsi::Runtime &rt, jsi::String path, jsi::String extension, std::optional<double> version, std::optional<double> maxVersions, std::optional<jsi::String> metadata) = 0;
-  virtual jsi::Value downloadAndInstallBundle(jsi::Runtime &rt, jsi::String url, jsi::String headersJson, jsi::String extension, std::optional<double> version, std::optional<double> maxVersions, std::optional<jsi::String> metadata) = 0;
+  virtual jsi::Value downloadAndInstallBundle(jsi::Runtime &rt, jsi::String url, jsi::String headersJson, jsi::String extension, std::optional<double> version, std::optional<double> maxVersions, std::optional<jsi::String> metadata, std::optional<jsi::String> expectedPackageHash) = 0;
   virtual jsi::Value setExactBundlePath(jsi::Runtime &rt, jsi::String path) = 0;
   virtual jsi::Value deleteBundle(jsi::Runtime &rt, double i) = 0;
   virtual void restart(jsi::Runtime &rt) = 0;
@@ -68,13 +68,13 @@ private:
       return bridging::callFromJs<jsi::Value>(
           rt, &T::setupBundlePath, jsInvoker_, instance_, std::move(path), std::move(extension), std::move(version), std::move(maxVersions), std::move(metadata));
     }
-    jsi::Value downloadAndInstallBundle(jsi::Runtime &rt, jsi::String url, jsi::String headersJson, jsi::String extension, std::optional<double> version, std::optional<double> maxVersions, std::optional<jsi::String> metadata) override {
+    jsi::Value downloadAndInstallBundle(jsi::Runtime &rt, jsi::String url, jsi::String headersJson, jsi::String extension, std::optional<double> version, std::optional<double> maxVersions, std::optional<jsi::String> metadata, std::optional<jsi::String> expectedPackageHash) override {
       static_assert(
-          bridging::getParameterCount(&T::downloadAndInstallBundle) == 7,
-          "Expected downloadAndInstallBundle(...) to have 7 parameters");
+          bridging::getParameterCount(&T::downloadAndInstallBundle) == 8,
+          "Expected downloadAndInstallBundle(...) to have 8 parameters");
 
       return bridging::callFromJs<jsi::Value>(
-          rt, &T::downloadAndInstallBundle, jsInvoker_, instance_, std::move(url), std::move(headersJson), std::move(extension), std::move(version), std::move(maxVersions), std::move(metadata));
+          rt, &T::downloadAndInstallBundle, jsInvoker_, instance_, std::move(url), std::move(headersJson), std::move(extension), std::move(version), std::move(maxVersions), std::move(metadata), std::move(expectedPackageHash));
     }
     jsi::Value setExactBundlePath(jsi::Runtime &rt, jsi::String path) override {
       static_assert(
