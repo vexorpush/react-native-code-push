@@ -5,7 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import java.io.File
-import com.facebook.react.BaseReactPackage
+import com.facebook.react.TurboReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.model.ReactModuleInfo
@@ -23,7 +23,15 @@ private fun shortValue(value: String?): String {
   return if (value.length > 120) "...${value.takeLast(120)}" else value
 }
 
-class VexorCodePush : BaseReactPackage() {
+/*
+ * TurboReactPackage rather than BaseReactPackage, which does not exist before
+ * React Native 0.75. On 0.75 and later TurboReactPackage is an empty deprecated
+ * subclass of it, so this one name compiles unchanged on every version the SDK
+ * supports and no consuming app needs a patch. Switch it over when 0.73 support
+ * is dropped.
+ */
+@Suppress("DEPRECATION")
+class VexorCodePush : TurboReactPackage() {
   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
     return if (name == VexorCodePushModule.NAME) {
       VexorCodePushModule(reactContext)
