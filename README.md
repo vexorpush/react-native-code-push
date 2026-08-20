@@ -23,7 +23,7 @@ import {
 } from '@vexor-push/react-native-code-push';
 
 configure({
-  baseUrl: 'https://app.vexor.one',
+  baseUrl: 'https://cp.example.com',
   deploymentKey: '<deployment-key-from-admin>',
   binaryVersion: '1.0.0',
   clientId: '<stable-device-or-install-id>',
@@ -55,7 +55,7 @@ The package includes the Vexor native CodePush loader. Keep the standard native 
 Preferred endpoint:
 
 ```text
-GET https://app.vexor.one/api/ota/key/:deploymentKey/update.json?currentVersion=0&platform=ios&binaryVersion=1.0.0
+GET https://cp.example.com/api/ota/key/:deploymentKey/update.json?currentVersion=0&platform=ios&binaryVersion=1.0.0
 ```
 
 The SDK also supports app/deployment fallback configuration for debugging, but production apps should use deployment keys.

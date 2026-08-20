@@ -4,7 +4,9 @@ const { makeScopedKey } = require("./deployment-state");
 const { resolveCurrentVersion } = require("./current-version");
 
 const defaultConfig = {
-  baseUrl: "https://app.vexor.one",
+  // No default host. A wrong-but-plausible one would send every device
+  // asking for updates to somebody else's server, silently.
+  baseUrl: "",
   deployment: "Production",
   binaryVersion: "*",
   downloadRetryAttempts: 2,
@@ -325,7 +327,7 @@ async function checkPendingUpdate(options = {}) {
 }
 
 function buildManifestUrl(config, currentVersion, clientId) {
-  const baseUrl = String(config.baseUrl || defaultConfig.baseUrl).replace(/\/+$/, "");
+  const baseUrl = String(required(config.baseUrl || defaultConfig.baseUrl, "baseUrl")).replace(/\/+$/, "");
   const path = config.deploymentKey
     ? `/api/ota/key/${encodeURIComponent(config.deploymentKey)}/update.json`
     : `/api/ota/${encodeURIComponent(required(config.appName, "appName"))}/${encodeURIComponent(
@@ -371,7 +373,7 @@ async function postReport(kind, payload, config) {
   const clientUniqueId = payload.clientUniqueId || (await getClientUniqueId(config));
   if (!clientUniqueId) return;
 
-  const baseUrl = String(config.baseUrl || defaultConfig.baseUrl).replace(/\/+$/, "");
+  const baseUrl = String(required(config.baseUrl || defaultConfig.baseUrl, "baseUrl")).replace(/\/+$/, "");
   const response = await fetch(`${baseUrl}/api/ota/report/${kind}`, {
     method: "POST",
     headers: {
