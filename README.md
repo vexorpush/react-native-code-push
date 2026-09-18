@@ -1,3 +1,18 @@
+> # ⚠️ Retired — do not use this repository
+>
+> The source of `@vexor-push/react-native-code-push` is
+> **[vexorpush/codepush](https://github.com/vexorpush/codepush)**, in
+> `packages/react-native-code-push`. Releases are published from there.
+>
+> This standalone repository stopped at **0.4.0**. Work towards 0.4.1 was
+> started here on 2026-08-25, abandoned mid-change, and finished in the
+> monorepo instead — it is preserved on the branch
+> `wip/abandoned-2026-08-25` and was never released from here.
+>
+> Everything below describes 0.4.0 and is kept for history only. Editing this
+> repository has no effect on the published package; that mistake is how the
+> source ended up split across three places to begin with.
+
 # @vexor-push/react-native-code-push
 
 React Native CodePush SDK for Vexor Push. This package combines the app-facing CodePush wrapper and the native OTA bundle loader so mobile apps only install one Vexor package.
