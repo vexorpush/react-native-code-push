@@ -11,16 +11,13 @@
 
 static NSUncaughtExceptionHandler *previousHandler = NULL;
 static BOOL isBeginning = YES;
-@implementation VexorCodePush
-RCT_EXPORT_MODULE()
+static dispatch_once_t crashHandlerInstallToken;
 
-+ (BOOL)requiresMainQueueSetup {
-  return NO;
-}
+static void VexorCodePushSignalHandler(int sig);
+static void VexorCodePushExceptionHandler(NSException *exception);
 
-- (instancetype)init {
-    self = [super init];
-    if (self) {
+static void VexorCodePushInstallCrashHandlers(void) {
+    dispatch_once(&crashHandlerInstallToken, ^{
         previousHandler = NSGetUncaughtExceptionHandler();
         NSSetUncaughtExceptionHandler(&VexorCodePushExceptionHandler);
         signal(SIGABRT, VexorCodePushSignalHandler);
@@ -32,11 +29,40 @@ RCT_EXPORT_MODULE()
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             isBeginning = NO;
         });
+    });
+}
+
+static void VexorCodePushSaveInstallState(NSString *state, NSNumber *version, NSString *reason) {
+    NSMutableDictionary *record = [NSMutableDictionary dictionary];
+    record[@"state"] = state ?: @"failed";
+    record[@"updatedAt"] = @((long long)([[NSDate date] timeIntervalSince1970] * 1000));
+    if (version) record[@"version"] = version;
+    if (reason.length > 0) record[@"reason"] = reason;
+    NSError *error = nil;
+    NSData *data = [NSJSONSerialization dataWithJSONObject:record options:0 error:&error];
+    if (!error && data) {
+        NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        [defaults setObject:json forKey:@"INSTALL_STATE"];
+        [defaults synchronize];
+    }
+}
+@implementation VexorCodePush
+RCT_EXPORT_MODULE()
+
++ (BOOL)requiresMainQueueSetup {
+  return NO;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        VexorCodePushInstallCrashHandlers();
     }
     return self;
 }
 
-void VexorCodePushSignalHandler(int sig) {
+static void VexorCodePushSignalHandler(int sig) {
     if (isBeginning) {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         // Use PREVIOUS_BUNDLE_PATH (simple key, written by saveBundleVersion before each update)
@@ -56,6 +82,7 @@ void VexorCodePushSignalHandler(int sig) {
             [defaults removeObjectForKey:@"PATH"];
         }
         [defaults removeObjectForKey:@"PREVIOUS_BUNDLE_PATH"];
+        VexorCodePushSaveInstallState(previousPath.length > 0 ? @"rolled-back" : @"failed", nil, @"startup-crash");
         [defaults removeObjectForKey:@"PREVIOUS_BUNDLE_VERSION"];
         [defaults synchronize];
     }
@@ -63,7 +90,7 @@ void VexorCodePushSignalHandler(int sig) {
     signal(sig, SIG_DFL);
     raise(sig);
 }
-void VexorCodePushExceptionHandler(NSException *exception) {
+static void VexorCodePushExceptionHandler(NSException *exception) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     if (isBeginning) {
         NSString *previousPath = [defaults stringForKey:@"PREVIOUS_BUNDLE_PATH"];
@@ -82,6 +109,7 @@ void VexorCodePushExceptionHandler(NSException *exception) {
             [defaults removeObjectForKey:@"PATH"];
         }
         [defaults removeObjectForKey:@"PREVIOUS_BUNDLE_PATH"];
+        VexorCodePushSaveInstallState(previousPath.length > 0 ? @"rolled-back" : @"failed", nil, @"startup-crash");
         [defaults removeObjectForKey:@"PREVIOUS_BUNDLE_VERSION"];
         [defaults synchronize];
     } else if (previousHandler) {
@@ -185,6 +213,9 @@ void VexorCodePushExceptionHandler(NSException *exception) {
 }
 
 + (NSURL *)getBundle {
+    // Install before React Native evaluates the selected bundle. This covers
+    // a first-boot JS/native crash that happens before module initialization.
+    VexorCodePushInstallCrashHandlers();
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *retrievedString = [defaults stringForKey:@"PATH"];
     NSString *currentVersionName = [defaults stringForKey:@"VERSION_NAME"];
@@ -321,6 +352,8 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
     return;
   }
 
+  VexorCodePushSaveInstallState(@"installing", version, nil);
+
   dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
     @try {
       NSURL *downloadURL = [NSURL URLWithString:url];
@@ -362,6 +395,7 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
       dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
 
       if (downloadError != nil) {
+        VexorCodePushSaveInstallState(@"failed", version, downloadError.localizedDescription);
         reject(@"E_DOWNLOAD_FAIL", downloadError.localizedDescription, downloadError);
         return;
       }
@@ -369,12 +403,14 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
       if ([downloadResponse isKindOfClass:[NSHTTPURLResponse class]]) {
         NSInteger statusCode = [(NSHTTPURLResponse *)downloadResponse statusCode];
         if (statusCode < 200 || statusCode > 299) {
+          VexorCodePushSaveInstallState(@"failed", version, [NSString stringWithFormat:@"HTTP %ld", (long)statusCode]);
           reject(@"E_DOWNLOAD_STATUS", [NSString stringWithFormat:@"Download failed with HTTP status %ld", (long)statusCode], nil);
           return;
         }
       }
 
       if (downloadedData == nil || downloadedData.length == 0) {
+        VexorCodePushSaveInstallState(@"failed", version, @"empty-download");
         reject(@"E_DOWNLOAD_EMPTY", @"Downloaded bundle is empty", nil);
         return;
       }
@@ -384,6 +420,7 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
       if (![fileManager fileExistsAtPath:cacheDir]) {
         NSError *createError = nil;
         if (![fileManager createDirectoryAtPath:cacheDir withIntermediateDirectories:YES attributes:nil error:&createError]) {
+          VexorCodePushSaveInstallState(@"failed", version, createError.localizedDescription);
           reject(@"E_CREATE_DIR", createError.localizedDescription, createError);
           return;
         }
@@ -392,12 +429,14 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
       NSString *zipPath = [cacheDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%lld-update.zip", (long long)([[NSDate date] timeIntervalSince1970] * 1000)]];
       NSError *writeError = nil;
       if (![downloadedData writeToFile:zipPath options:NSDataWritingAtomic error:&writeError]) {
+        VexorCodePushSaveInstallState(@"failed", version, writeError.localizedDescription);
         reject(@"E_WRITE_FILE", writeError.localizedDescription, writeError);
         return;
       }
 
       NSString *extractedFilePath = [self unzipFileAtPath:zipPath extension:(extension != nil) ? extension : @".jsbundle" version:version];
       if (extractedFilePath == nil) {
+        VexorCodePushSaveInstallState(@"failed", version, @"unzip-failed");
         reject(@"E_UNZIP_FAIL", @"Unzipping failed, zip file invalid", nil);
         return;
       }
@@ -414,6 +453,7 @@ RCT_EXPORT_METHOD(downloadAndInstallBundle:(NSString *)url
       isBeginning = YES;
       resolve(@(YES));
     } @catch (NSException *exception) {
+      VexorCodePushSaveInstallState(@"failed", version, exception.reason);
       reject(@"E_DOWNLOAD_INSTALL", exception.reason, nil);
     }
   });
@@ -423,6 +463,7 @@ RCT_EXPORT_METHOD(setupBundlePath:(NSString *)path extension:(NSString *)extensi
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject) {
     if ([VexorCodePush isFilePathValid:path]) {
+        VexorCodePushSaveInstallState(@"installing", version, nil);
         //Unzip file
         NSString *extractedFilePath = [self unzipFileAtPath:path extension:(extension != nil) ? extension : @".jsbundle" version:version];
         if (extractedFilePath) {
@@ -444,9 +485,11 @@ RCT_EXPORT_METHOD(setupBundlePath:(NSString *)path extension:(NSString *)extensi
             isBeginning = YES;
             resolve(@(YES));
         } else {
+            VexorCodePushSaveInstallState(@"failed", version, @"unzip-failed");
             reject(@"E_UNZIP_FAIL", @"Unzipping failed, zip file invalid", nil);
         }
     } else {
+        VexorCodePushSaveInstallState(@"failed", version, @"invalid-path");
         reject(@"E_INVALID_PATH", @"Invalid or missing file path", nil);
     }
 }
@@ -763,6 +806,7 @@ RCT_EXPORT_METHOD(setExactBundlePath:(NSString *)path
     [defaults setObject:path forKey:@"PATH"];
     [defaults setObject:[NSString stringWithFormat:@"%ld", (long)version] forKey:@"VERSION"];
     [defaults synchronize];
+    VexorCodePushSaveInstallState(@"pending-ready", @(version), nil);
 }
 
 RCT_EXPORT_METHOD(restart) {

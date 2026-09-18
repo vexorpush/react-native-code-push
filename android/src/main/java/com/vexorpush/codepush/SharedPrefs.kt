@@ -55,6 +55,7 @@ object Common {
     val SHARED_PREFERENCE_NAME = "VEXOR-CODE-PUSH-REACT_NATIVE"
     val DEFAULT_BUNDLE = "assets://index.android.bundle"
     val METADATA = "METADATA"
+    val INSTALL_STATE = "INSTALL_STATE"
     val BUNDLE_HISTORY = "BUNDLE_HISTORY"
     const val DEFAULT_MAX_BUNDLE_VERSIONS = 2
 }

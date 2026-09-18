@@ -1,6 +1,15 @@
 import type { PlatformOSType } from "react-native";
 
 export type UpdateMode = "force" | "background" | "deferred" | "prompt";
+export type InstallState =
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "installing"
+  | "pending-ready"
+  | "ready"
+  | "failed"
+  | "rolled-back";
 
 export type VexorOtaManifest = {
   version: number;
@@ -79,6 +88,9 @@ export function configure(config: VexorOtaConfig): VexorOtaConfig &
   Required<Pick<VexorOtaConfig, "baseUrl" | "deployment" | "binaryVersion" | "platform">>;
 export function getConfig(): Partial<VexorOtaConfig>;
 export function getCurrentVersion(config?: Partial<VexorOtaConfig>): Promise<number>;
+export function getInstallState(config?: Partial<VexorOtaConfig>): Promise<
+  (Record<string, unknown> & { state: InstallState }) | null
+>;
 export function getClientUniqueId(config?: Partial<VexorOtaConfig>): Promise<string>;
 export function checkUpdate(options?: CheckUpdateOptions): Promise<VexorOtaUpdate>;
 export function installUpdate(update: VexorOtaUpdate | VexorOtaManifest, options?: InstallUpdateOptions): Promise<void>;

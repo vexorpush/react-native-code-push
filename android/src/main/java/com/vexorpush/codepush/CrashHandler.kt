@@ -15,6 +15,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 private const val DEBUG_TAG = "VEXOR-CODEPUSH-DEBUG"
@@ -84,6 +85,12 @@ class CrashHandler(private val context: Context) : Thread.UncaughtExceptionHandl
     if (!rolledBack) {
       sharedPrefs.putString(PATH, "")
     }
+
+    val state = JSONObject()
+      .put("state", if (rolledBack) "rolled-back" else "failed")
+      .put("reason", "startup-crash")
+      .put("updatedAt", System.currentTimeMillis())
+    sharedPrefs.putString(Common.INSTALL_STATE, state.toString())
 
     val errorMessage = throwable.message ?: "Unknown error occurred"
     // Toast must be posted to the main looper: the crashing thread is often a

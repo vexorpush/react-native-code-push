@@ -9,15 +9,15 @@ set(CMAKE_VERBOSE_MAKEFILE on)
 file(GLOB react_codegen_SRCS CONFIGURE_DEPENDS *.cpp react/renderer/components/RNVexorCodePushSpec/*.cpp)
 
 add_library(
-  react_codegen_RNVexorCodePushSpec
+  react_codegen_VexorCodePush
   OBJECT
   ${react_codegen_SRCS}
 )
 
-target_include_directories(react_codegen_RNVexorCodePushSpec PUBLIC . react/renderer/components/RNVexorCodePushSpec)
+target_include_directories(react_codegen_VexorCodePush PUBLIC . react/renderer/components/RNVexorCodePushSpec)
 
 target_link_libraries(
-  react_codegen_RNVexorCodePushSpec
+  react_codegen_VexorCodePush
   fbjni
   jsi
   # We need to link different libraries based on whether we are building rncore or not, that's necessary
@@ -26,7 +26,7 @@ target_link_libraries(
 )
 
 target_compile_options(
-  react_codegen_RNVexorCodePushSpec
+  react_codegen_VexorCodePush
   PRIVATE
   -DLOG_TAG=\"ReactNative\"
   -fexceptions

@@ -170,6 +170,15 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
     return file.parentFile?.name ?: ""
   }
 
+  private fun saveInstallState(state: String, version: Int? = null, reason: String? = null) {
+    val stateJson = JSONObject()
+    stateJson.put("state", state)
+    stateJson.put("updatedAt", System.currentTimeMillis())
+    if (version != null) stateJson.put("version", version)
+    if (!reason.isNullOrBlank()) stateJson.put("reason", reason)
+    SharedPrefs(reactApplicationContext).putString(Common.INSTALL_STATE, stateJson.toString())
+  }
+
   private fun saveBundleVersion(
     newPath: String,
     version: Int,
@@ -226,6 +235,7 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
     maxVersions: Int?,
     metadata: String?
   ): Boolean {
+    if (version != null) saveInstallState("installing", version)
     if (path != null) {
       val file = File(path)
       Log.d(
@@ -245,6 +255,7 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
           if (version != null) {
             val maxVersionsToKeep = maxVersions ?: Common.DEFAULT_MAX_BUNDLE_VERSIONS
             saveBundleVersion(fileUnzip, version, maxVersionsToKeep, metadata)
+            saveInstallState("pending-ready", version)
           } else {
             // No version (e.g., Git update) - just set path, no history
             sharedPrefs.putString(PATH, fileUnzip)
@@ -302,6 +313,7 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
       } catch (e: Exception) {
         withContext(Dispatchers.Main) {
           Log.e(DEBUG_TAG, "downloadAndInstallBundle error=${e.message}", e)
+          saveInstallState("failed", version?.toInt(), e.message)
           promise.reject("DOWNLOAD_INSTALL_ERROR", e)
         }
       }
@@ -371,6 +383,7 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
       } catch (e: Exception) {
         withContext(Dispatchers.Main) {
           Log.e(DEBUG_TAG, "setupBundlePath error=${e.message}", e)
+          saveInstallState("failed", version?.toInt(), e.message)
           promise.reject("SET_ERROR", e)
         }
       }
@@ -461,10 +474,11 @@ class VexorCodePushModule internal constructor(context: ReactApplicationContext)
 
   @ReactMethod
   override fun setExactBundlePath(path: String?, promise: Promise) {
-    val file = File(path)
+    val safePath = path ?: ""
+    val file = File(safePath)
     if (file.exists() && file.isFile) {
       val sharedPrefs = SharedPrefs(reactApplicationContext)
-      sharedPrefs.putString(PATH, path)
+      sharedPrefs.putString(PATH, safePath)
       sharedPrefs.putString(
         CURRENT_VERSION_CODE,
         reactApplicationContext.getVersionCode()

@@ -18,11 +18,29 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES'
   }
   s.public_header_files = "ios/VexorCodePush.h"
-  s.source_files = "ios/**/*.{h,m,mm,cpp}"
+  # Keep the source list explicit. CocoaPods 1.16 on Ruby 4 can emit a null-byte
+  # pathname when expanding recursive globs through a pnpm symlink.
+  s.source_files = [
+    "ios/VexorCodePush.h",
+    "ios/VexorCodePush.mm",
+    "ios/generated/RNVexorCodePushSpec/ComponentDescriptors.cpp",
+    "ios/generated/RNVexorCodePushSpec/ComponentDescriptors.h",
+    "ios/generated/RNVexorCodePushSpec/EventEmitters.cpp",
+    "ios/generated/RNVexorCodePushSpec/EventEmitters.h",
+    "ios/generated/RNVexorCodePushSpec/Props.cpp",
+    "ios/generated/RNVexorCodePushSpec/Props.h",
+    "ios/generated/RNVexorCodePushSpec/RCTComponentViewHelpers.h",
+    "ios/generated/RNVexorCodePushSpec/RNVexorCodePushSpec-generated.mm",
+    "ios/generated/RNVexorCodePushSpec/RNVexorCodePushSpec.h",
+    "ios/generated/RNVexorCodePushSpec/ShadowNodes.cpp",
+    "ios/generated/RNVexorCodePushSpec/ShadowNodes.h",
+    "ios/generated/RNVexorCodePushSpec/States.cpp",
+    "ios/generated/RNVexorCodePushSpec/States.h",
+    "ios/generated/RNVexorCodePushSpecJSI-generated.cpp",
+    "ios/generated/RNVexorCodePushSpecJSI.h"
+  ]
+  s.exclude_files = "ios/generated"
   s.dependency 'SSZipArchive', '~> 2.4.3'
-  if ENV['RCT_NEW_ARCH_ENABLED'] == '0'
-    s.exclude_files = "ios/generated"
-  end
   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.
   # See https://github.com/facebook/react-native/blob/febf6b7f33fdb4904669f99d795eba4c0f95d7bf/scripts/cocoapods/new_architecture.rb#L79.
   if respond_to?(:install_modules_dependencies, true)

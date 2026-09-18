@@ -2,6 +2,7 @@
 const { NativeModules, Platform } = require("react-native");
 const { makeScopedKey } = require("./deployment-state");
 const { resolveCurrentVersion } = require("./current-version");
+const { INSTALL_STATES, normalizeInstallState } = require("./install-state");
 
 const defaultConfig = {
   // No default host. A wrong-but-plausible one would send every device
@@ -65,6 +66,19 @@ async function getCurrentVersion(config = runtimeConfig) {
     scope: makeScopedKey("vexorCodePushCurrentVersion", scopedConfig),
   });
   return resolvedVersion;
+}
+
+async function getInstallState(config = runtimeConfig) {
+  const scopedConfig = normalizeConfig({ ...runtimeConfig, ...config });
+  const stored = await readJson(makeScopedKey("vexorCodePushInstallState", scopedConfig));
+  if (stored?.state) return stored;
+
+  const nativeMetadata = await readNativeUpdateMetadata();
+  if (!nativeMetadata?.state) return null;
+  return {
+    ...nativeMetadata,
+    state: normalizeInstallState(nativeMetadata.state),
+  };
 }
 
 async function checkUpdate(options = {}) {
@@ -146,6 +160,7 @@ async function installUpdate(update, options = {}) {
     version,
     label: reportPayload.label,
     installedAt: Date.now(),
+    state: INSTALL_STATES.DOWNLOADING,
   }, config).catch(() => undefined);
   debugLog(config, "installUpdate:pendingSaved", {
     version,
@@ -162,6 +177,13 @@ async function installUpdate(update, options = {}) {
       config,
       extensionBundle,
     });
+    await savePendingUpdate({
+      ...reportPayload,
+      version,
+      label: reportPayload.label,
+      installedAt: Date.now(),
+      state: INSTALL_STATES.PENDING_READY,
+    }, config);
     debugLog(config, "installUpdate:downloadSuccess", {
       version,
       label: reportPayload.label,
@@ -178,6 +200,12 @@ async function installUpdate(update, options = {}) {
       message: error?.message || String(error),
     });
     await reportDeploy({ ...reportPayload, status: "DeploymentFailed" }, config).catch(() => undefined);
+    await saveLifecycleState({
+      ...reportPayload,
+      version,
+      state: INSTALL_STATES.FAILED,
+      failedAt: Date.now(),
+    }, config).catch(() => undefined);
     await clearPendingUpdate(config).catch(() => undefined);
     if (options.onError) options.onError(error);
     throw error;
@@ -285,6 +313,11 @@ async function notifyApplicationReady(options = {}) {
   }
 
   await reportDeploy({ ...pending, status: "DeploymentSucceeded" }, config).catch(() => undefined);
+  await saveLifecycleState({
+    ...pending,
+    state: INSTALL_STATES.READY,
+    readyAt: Date.now(),
+  }, config);
   await clearPendingUpdate(config);
   debugLog(config, "notifyApplicationReady", {
     status: "ready",
@@ -302,8 +335,42 @@ async function checkPendingUpdate(options = {}) {
     return { status: "none" };
   }
 
+  // Native startup recovery runs before the JS bundle can call this method.
+  // If it already selected the previous bundle, do not turn the stale JS
+  // pending marker into a false application-ready event on the next launch.
+  const nativeMetadata = await readNativeUpdateMetadata();
+  const nativeState = normalizeInstallState(nativeMetadata?.state);
+  const nativeVersion = Number(nativeMetadata?.version);
+  const nativeRecovery = nativeState === INSTALL_STATES.ROLLED_BACK || nativeState === INSTALL_STATES.FAILED;
+  const sameRelease = !Number.isFinite(nativeVersion) || nativeVersion === Number(pending.version);
+  if (nativeRecovery && sameRelease) {
+    await reportDeploy({ ...pending, status: "DeploymentFailed" }, config).catch(() => undefined);
+    await saveLifecycleState({
+      ...pending,
+      state: nativeState,
+      reason: nativeMetadata?.reason || "native-startup-recovery",
+      recoveredAt: Date.now(),
+    }, config).catch(() => undefined);
+    await clearPendingUpdate(config).catch(() => undefined);
+    debugLog(config, "checkPendingUpdate", {
+      status: nativeState === INSTALL_STATES.ROLLED_BACK ? "rolledBack" : "failed",
+      version: pending.version,
+      label: pending.label,
+      source: "native-recovery",
+    });
+    return {
+      status: nativeState === INSTALL_STATES.ROLLED_BACK ? "rolledBack" : "failed",
+      pending,
+    };
+  }
+
   if (pending.launchSeenAt) {
     await reportDeploy({ ...pending, status: "DeploymentFailed" }, config).catch(() => undefined);
+    await saveLifecycleState({
+      ...pending,
+      state: INSTALL_STATES.ROLLED_BACK,
+      rolledBackAt: Date.now(),
+    }, config).catch(() => undefined);
     await clearPendingUpdate(config).catch(() => undefined);
     if (options.rollbackOnFailedPending !== false) {
       hotUpdate.removeUpdate(options.restartAfterRollback ?? false);
@@ -316,7 +383,11 @@ async function checkPendingUpdate(options = {}) {
     return { status: "rolledBack", pending };
   }
 
-  const nextPending = { ...pending, launchSeenAt: Date.now() };
+  const nextPending = {
+    ...pending,
+    state: normalizeInstallState(pending.state),
+    launchSeenAt: Date.now(),
+  };
   await savePendingUpdate(nextPending, config).catch(() => undefined);
   debugLog(config, "checkPendingUpdate", {
     status: "pending",
@@ -421,6 +492,18 @@ async function clearPendingUpdate(config = runtimeConfig) {
   await removeItem(makeScopedKey("vexorCodePushPendingUpdate", config));
 }
 
+async function saveLifecycleState(payload, config = runtimeConfig) {
+  const stateRecord = {
+    ...payload,
+    state: normalizeInstallState(payload.state, INSTALL_STATES.FAILED),
+  };
+  await writeJson(makeScopedKey("vexorCodePushInstallState", config), stateRecord);
+  const nativeModule = NativeModules?.VexorCodePush;
+  if (nativeModule?.setUpdateMetadata) {
+    await nativeModule.setUpdateMetadata(JSON.stringify(stateRecord)).catch(() => undefined);
+  }
+}
+
 async function writeScopedVersion(config, version) {
   await writeJson(makeScopedKey("vexorCodePushCurrentVersion", config), {
     version: Number(version) || 0,
@@ -446,6 +529,17 @@ async function readNativeCurrentVersion() {
     return Number.isFinite(parsed) ? parsed : undefined;
   } catch {
     return undefined;
+  }
+}
+
+async function readNativeUpdateMetadata() {
+  const nativeModule = NativeModules?.VexorCodePush;
+  if (!nativeModule?.getUpdateMetadata) return null;
+  try {
+    const metadata = await nativeModule.getUpdateMetadata(0);
+    return metadata ? JSON.parse(metadata) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -527,6 +621,7 @@ module.exports = {
   configure,
   getConfig,
   getCurrentVersion,
+  getInstallState,
   getClientUniqueId,
   checkUpdate,
   installUpdate,

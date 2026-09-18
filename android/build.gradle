@@ -91,8 +91,8 @@ android {
       if (isNewArchitectureEnabled()) {
         java.srcDirs += [
           "src/newarch",
-          // Codegen specs
-          "generated/java",
+          // Codegen Java sources are added by the React Native Gradle plugin.
+          // Keep the checked-in JNI CMake entrypoint for app autolinking.
           "generated/jni"
         ]
       } else {

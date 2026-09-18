@@ -12,6 +12,7 @@
     "index.js",
     "index.d.ts",
     "deployment-state.js",
+    "install-state.js",
     "current-version.js",
     "src/NativeVexorCodePush.ts",
     "android",
@@ -42,6 +43,11 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
+  },
+  "codegenConfig": {
+    "name": "VexorCodePush",
+    "type": "modules",
+    "jsSrcsDir": "src"
   },
   "publishConfig": {
     "access": "public",
